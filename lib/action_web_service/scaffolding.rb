@@ -38,51 +38,83 @@ module ActionWebService
       # Generates web service invocation scaffolding for the current controller. The given action name
       # can then be used as the entry point for invoking API methods from a web browser.
       def web_service_scaffold(action_name)
+        #DK NOTE: Here we try to add the scaffold directory to the view_paths....
+        #First we just shove it in there... next cut we will match and insert if not found!!!
+        
+        append_view_path(File.dirname(__FILE__) + "/templates/scaffolds/")
+        
+        view_paths.each do |a_path|   
+          $stderr.puts "path: #{a_path}"           
+        end
+          
+        $stderr.puts "Am in the web_service_scaffold call!!!"
         add_template_helper(Helpers)
+        $stderr.puts "Post add_template"
+        
         module_eval <<-"end_eval", __FILE__, __LINE__ + 1
           def #{action_name}
-            if request.method == :get
+            $stderr.puts "in the #{action_name} method"
+            if request.get?
+              $stderr.puts "in the get...."
               setup_invocation_assigns
+              $stderr.puts "post setup_invocation_assigns...."
               render_invocation_scaffold 'methods'
             end
           end
 
           def #{action_name}_method_params
-            if request.method == :get
+            if request.get?
               setup_invocation_assigns
               render_invocation_scaffold 'parameters'
             end
           end
 
           def #{action_name}_submit
-            if request.method == :post
+            if request.post?
               setup_invocation_assigns
               protocol_name = params['protocol'] ? params['protocol'].to_sym : :soap
               case protocol_name
               when :soap
                 @protocol = Protocol::Soap::SoapProtocol.create(self)
+                $stderr.puts "protocol is soap"
+
               when :xmlrpc
                 @protocol = Protocol::XmlRpc::XmlRpcProtocol.create(self)
+                $stderr.puts "protocol is xml"
+                
               end
               bm = Benchmark.measure do
+                $stderr.puts "break 0"
+                #session[:scaffold_service] =@scaffold_service
+                #session[:scaffold_service_api] = @scaffold_service.api
                 @protocol.register_api(@scaffold_service.api)
                 post_params = params['method_params'] ? params['method_params'].dup : nil
                 params = []
+                $stderr.puts "break 1"
                 @scaffold_method.expects.each_with_index do |spec, i|
                   params << post_params[i.to_s]
                 end if @scaffold_method.expects
+                $stderr.puts "break 2"
                 params = @scaffold_method.cast_expects(params)
+                $stderr.puts "break 3"
                 method_name = public_method_name(@scaffold_service.name, @scaffold_method.public_name)
+                $stderr.puts "break 4"
                 @method_request_xml = @protocol.encode_request(method_name, params, @scaffold_method.expects)
+                $stderr.puts "break 5"
                 new_request = @protocol.encode_action_pack_request(@scaffold_service.name, @scaffold_method.public_name, @method_request_xml)
+                $stderr.puts "break 6"
                 prepare_request(new_request, @scaffold_service.name, @scaffold_method.public_name)
+                $stderr.puts "break 7"
                 self.request = new_request
                 if @scaffold_container.dispatching_mode != :direct
                   request.parameters['action'] = @scaffold_service.name
                 end
+                puts "sending the dispatch"
                 dispatch_web_service_request
+                puts "back from the dispatch"
                 @method_response_xml = response.body
                 method_name, obj = @protocol.decode_response(@method_response_xml)
+                puts "back from decoding the response"
                 return if handle_invocation_exception(obj)
                 @method_return_value = @scaffold_method.cast_returns(obj)
               end
@@ -105,17 +137,27 @@ module ActionWebService
 
             def render_invocation_scaffold(action)
               customized_template = "\#{self.class.controller_path}/#{action_name}/\#{action}"
-              default_template = scaffold_path(action)
+              #default_template = scaffold_path(action)
+              default_template = action
               begin
-                content = @template.render(:file => customized_template)
+                content = view_context.render(:file => customized_template)
               rescue ActionView::MissingTemplate
-                content = @template.render(:file => default_template)
+                logger.debug "caught the MissingTemplate..."
+                content = view_context.render(:file => default_template)
               end
-              @template.instance_variable_set("@content_for_layout", content)
-              if self.active_layout.nil?
-                render :file => scaffold_path("layout")
+              # @template.instance_variable_set("@content_for_layout", content)
+              #if self.active_layout.nil?
+              #  render :file => scaffold_path("layout")
+              #else
+              #  render :file => self.active_layout, :use_full_path => true
+              #end
+              
+              @content_for_layout = content
+              #DK REVISIT:::::::::
+              unless self.action_has_layout?
+                render :file => "layout", :layout => false
               else
-                render :file => self.active_layout, :use_full_path => true
+                render :file => "/layouts/"+self.send(:_default_layout), :use_full_path => true
               end
             end
 
@@ -124,8 +166,13 @@ module ActionWebService
             end
 
             def reset_invocation_response
-              erase_render_results
-              response.instance_variable_set :@header, Rack::Utils::HeaderHash.new(::ActionController::Response::DEFAULT_HEADERS.merge("cookie" => []))
+              #DK NOTE: the erase_render_results was deprecated. I believe the following will
+              #         accomplish what it used to do   
+              #  erase_render_results
+              self.instance_variable_set(:@_response_body, nil)
+              #DK NOTE: it looks like this changed too!
+              #response.instance_variable_set :@header, Rack::Utils::HeaderHash.new(::ActionController::Response::DEFAULT_HEADERS.merge("cookie" => []))
+              response.instance_variable_set :@header, Rack::Utils::HeaderHash.new("cookie" => [], 'Content-Type' => 'text/html')
             end
 
             def public_method_name(service_name, method_name)
@@ -225,9 +272,9 @@ module ActionWebService
       def service_method_list(service)
         action = @scaffold_action_name + '_method_params'
         methods = service.api_methods_full.sort {|a, b| a[1] <=> b[1]}.map do |desc, name|
-          content_tag("li", link_to(name, :action => action, :service => service.name, :method => name))
+          content_tag("li", link_to(desc, :action => action, :service => service.name, :method => name)).html_safe
         end
-        content_tag("ul", methods.join("\n"))
+        content_tag("ul", methods.join("\n").html_safe)
       end
     end
 
