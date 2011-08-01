@@ -216,21 +216,23 @@ module ActionWebService
           return content_tag('em', "Nested structural types not supported yet (#{type.name})") if was_structured
           parameters = ""
           type.each_member do |member_name, member_type|
-            label = method_parameter_label(member_name, member_type)
+            label = method_parameter_label(member_name, member_type).html_safe
             nested_content = method_parameter_input_fields(
               method,
               member_type,
               "#{field_name_base}[#{idx}][#{member_name}]",
               idx,
               true)
+          content_tag('ul', parameters)			  
             if member_type.custom?
+			
               parameters << content_tag('li', label)
               parameters << content_tag('ul', nested_content)
             else
               parameters << content_tag('li', label + ' ' + nested_content)
             end
           end
-          content_tag('ul', parameters)
+          content_tag('ul', parameters.html_safe)
         else
           # If the data source was structured previously we already have the index set          
           field_name_base = "#{field_name_base}[#{idx}]" unless was_structured
