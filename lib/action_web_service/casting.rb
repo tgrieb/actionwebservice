@@ -45,7 +45,7 @@ module ActionWebService # :nodoc:
 
         def cast(value, signature_type) # :nodoc:
           return value if signature_type.nil? # signature.length != params.length
-          return nil if value.nil?
+          return nil if value.nil?          
           # XMLRPC protocol doesn't support nil values. It uses false instead.
           # It should never happen for SOAP.
           if signature_type.structured? && value.equal?(false)
@@ -76,8 +76,11 @@ module ActionWebService # :nodoc:
           # See http://dev.rubyonrails.com/ticket/2516
           value = value.to_time if value.is_a?(XMLRPC::DateTime)
 
+		  #Rails.logger.debug("cast_date_type sig_type=#{signature_type.type} value=#{value}")
+
           case signature_type.type
           when :int
+          	return nil if value == ""
             Integer(value)
           when :string
             value.to_s
@@ -99,6 +102,7 @@ module ActionWebService # :nodoc:
               raise CastingError, "Don't know how to cast #{value.class} into Boolean"
             end
           when :float
+          	return nil if value == ""
             Float(value)
           when :decimal
             BigDecimal(value.to_s)
